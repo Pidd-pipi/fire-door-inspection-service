@@ -19,7 +19,7 @@ func opsRule0301() OpsRule {
 	return OpsRule{
 		Code:           "OPS-0301",
 		Name:           "fire-door-inspection-service control 0301",
-		Severity:       opsRuleGroupSeverities[0],
+		Severity:       OpsPriorityLow,
 		RequiredLabels: []string{"site", "operator", "evidence"},
 		Terminal:       false,
 	}
@@ -29,7 +29,7 @@ func opsRule0302() OpsRule {
 	return OpsRule{
 		Code:           "OPS-0302",
 		Name:           "fire-door-inspection-service control 0302",
-		Severity:       opsRuleGroupSeverities[1],
+		Severity:       OpsPriorityNormal,
 		RequiredLabels: []string{"site", "operator", "evidence"},
 		Terminal:       false,
 	}
@@ -39,7 +39,7 @@ func opsRule0303() OpsRule {
 	return OpsRule{
 		Code:           "OPS-0303",
 		Name:           "fire-door-inspection-service control 0303",
-		Severity:       opsRuleGroupSeverities[2],
+		Severity:       OpsPriorityHigh,
 		RequiredLabels: []string{"site", "operator", "evidence"},
 		Terminal:       false,
 	}
