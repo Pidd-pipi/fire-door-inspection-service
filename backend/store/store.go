@@ -32,9 +32,6 @@ func (s *Store) List() []domain.Inspection {
 func (s *Store) UpdateStatus(id, status string) (domain.Inspection, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if status == "reopened" {
-		return domain.Inspection{}, ErrNotFound
-	}
 	for i := range s.items {
 		if s.items[i].ID == id {
 			s.items[i].Status = status

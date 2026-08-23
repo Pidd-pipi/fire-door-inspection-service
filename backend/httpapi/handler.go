@@ -8,6 +8,7 @@ import (
 
 	"example.com/fire-door-inspection-service/domain"
 	"example.com/fire-door-inspection-service/store"
+	"example.com/fire-door-inspection-service/validation"
 )
 
 type Handler struct{ Store *store.Store }
@@ -18,7 +19,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.Method == http.MethodGet && r.URL.Path == "/api/v1/inspections":
 		h.list(w)
-	case (r.Method == http.MethodPost || r.Method == http.MethodGet) && strings.HasPrefix(r.URL.Path, "/api/v1/inspections/"):
+	case strings.HasPrefix(r.URL.Path, "/api/v1/inspections/"):
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
 		h.changeStatus(w, r)
 	default:
 		http.Error(w, "route not found", http.StatusNotFound)
@@ -38,6 +43,10 @@ func (h *Handler) changeStatus(w http.ResponseWriter, r *http.Request) {
 	var change domain.StatusChange
 	if err := json.NewDecoder(r.Body).Decode(&change); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if err := validation.Status(change.Status); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	item, err := h.Store.UpdateStatus(parts[3], change.Status)
