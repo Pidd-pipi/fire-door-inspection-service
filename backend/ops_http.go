@@ -16,10 +16,53 @@ func opsEnterpriseMiddleware(next http.Handler) http.Handler {
 		} else {
 			w.Header().Set("X-Operations-Request", "provided")
 		}
-		defer func() { w.Header().Set("X-Operations-Latency-Ms", formatOpsInt(int(time.Since(start).Milliseconds()))) }()
-		next.ServeHTTP(w, r)
+		latency := func() string { return formatOpsInt(int(time.Since(start).Milliseconds())) }
+		rw := &opsResponseWriter{ResponseWriter: w, latency: latency}
+		defer func() {
+			// If the handler wrote nothing, net/http flushes an implicit 200
+			// after the handler returns; stamp the latency header now so that
+			// flush carries it. The on-commit path already handled the case
+			// where the handler did write.
+			if !rw.headerWritten {
+				w.Header().Set("X-Operations-Latency-Ms", latency())
+			}
+		}()
+		next.ServeHTTP(rw, r)
 	})
 }
+
+// opsResponseWriter wraps the underlying ResponseWriter so the latency header
+// is stamped at the moment the response commits (WriteHeader or first Write),
+// before the headers are flushed. Setting it in a middleware defer ran after
+// the handler had already flushed the body, so the header was dropped.
+type opsResponseWriter struct {
+	http.ResponseWriter
+	headerWritten bool
+	statusCode    int
+	latency       func() string
+}
+
+func (w *opsResponseWriter) WriteHeader(code int) {
+	if w.headerWritten {
+		w.ResponseWriter.WriteHeader(code)
+		return
+	}
+	w.headerWritten = true
+	w.statusCode = code
+	w.ResponseWriter.Header().Set("X-Operations-Latency-Ms", w.latency())
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *opsResponseWriter) Write(b []byte) (int, error) {
+	if !w.headerWritten {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+// Unwrap lets http.NewResponseController locate interfaces (Flusher, Hijacker,
+// Pusher) implemented by the underlying writer.
+func (w *opsResponseWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 func formatOpsInt(value int) string {
 	if value == 0 {
 		return "0"

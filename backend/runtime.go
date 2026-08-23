@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -19,7 +21,12 @@ func serveAddress(address string, handler http.Handler) error {
 }
 
 func serveHTTP(server *http.Server) error {
-	errCh := make(chan error)
+	// Buffer the channel so the listener goroutine never blocks waiting for a
+	// receiver. On a signal-driven shutdown the select below takes the signal
+	// branch and returns without draining this channel; with an unbuffered
+	// channel the goroutine would then block forever on the send, leaking one
+	// goroutine per restart and piling up across restart cycles.
+	errCh := make(chan error, 1)
 	go func() {
 		errCh <- server.ListenAndServe()
 	}()
@@ -59,13 +66,29 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		if requestID == "" {
 			requestID = fmt.Sprintf("req-%d", atomic.AddUint64(&requestSequence, 1))
 		}
-		defer func() { w.Header().Set("X-Request-ID", requestID) }()
+		// Set the response header before dispatching to the handler. Setting it
+		// in a defer ran only after the handler had already flushed the body, so
+		// the value was silently dropped on every response that wrote a body.
+		w.Header().Set("X-Request-ID", requestID)
 		next.ServeHTTP(w, r)
 	})
 }
 
 func recoveryMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			rec := recover()
+			if rec == nil {
+				return
+			}
+			log.Printf("recovered panic: %v\n%s", rec, debug.Stack())
+			// If the handler already started writing, we can no longer replace
+			// the response with a 500; just let the in-flight response finish.
+			if committed, ok := w.(*opsResponseWriter); ok && committed.headerWritten {
+				return
+			}
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+		}()
 		next.ServeHTTP(w, r)
 	})
 }
