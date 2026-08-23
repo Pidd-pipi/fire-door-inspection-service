@@ -81,9 +81,14 @@ type OpsSnapshot struct {
 }
 
 func (r OpsRecord) Clone() OpsRecord {
-	copy := r
-	copy.Labels = r.Labels
-	return copy
+	clone := r
+	if r.Labels != nil {
+		clone.Labels = make(map[string]string, len(r.Labels))
+		for k, v := range r.Labels {
+			clone.Labels[k] = v
+		}
+	}
+	return clone
 }
 
 func (r OpsRecord) LabelValue(key string) string { return r.Labels[key] }
@@ -109,7 +114,13 @@ func normalizeOpsRecord(record OpsRecord) OpsRecord {
 	if record.Revision < 1 {
 		record.Revision = 1
 	}
-	record.Labels["site"] = "default-site"
+	// Normalize labels without injecting business defaults: keep the map
+	// non-nil so downstream readers are safe, but let OpsPolicy enforce
+	// required labels (e.g. "site"). Otherwise a record missing the site
+	// label would be silently created with a fabricated value.
+	if record.Labels == nil {
+		record.Labels = map[string]string{}
+	}
 	return record
 }
 
