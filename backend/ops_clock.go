@@ -22,7 +22,11 @@ func opsContext(parent context.Context, timeout time.Duration) (context.Context,
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	return context.WithTimeout(context.Background(), timeout)
+	// Derive from the parent so request cancellation and the parent's deadline
+	// propagate into the operation. The previous implementation built the
+	// timeout off context.Background(), which detached the operation from the
+	// caller: a cancelled request left the inspection flow running to completion.
+	return context.WithTimeout(parent, timeout)
 }
 func opsDeadline(ctx context.Context) bool {
 	if ctx == nil {
@@ -44,8 +48,15 @@ func opsBackoff(attempt int) time.Duration {
 func opsDelay(ctx context.Context, duration time.Duration) error {
 	timer := time.NewTimer(duration)
 	defer timer.Stop()
-	<-timer.C
-	return nil
+	select {
+	case <-timer.C:
+		return nil
+	case <-ctx.Done():
+		// Honour cancellation and deadlines instead of blocking for the full
+		// duration. The previous version only waited on the timer, so a
+		// cancelled or expired context never interrupted the delay.
+		return ctx.Err()
+	}
 }
 func opsAge(now time.Time, stamp string) time.Duration {
 	parsed, err := opsParseStamp(stamp)

@@ -70,6 +70,9 @@ func (s *OpsService) Search(ctx context.Context, q OpsQuery) (OpsPage, error) {
 func (s *OpsService) Transition(ctx context.Context, id string, expected int, target OpsStatus, actor string) (OpsRecord, error) {
 	ctx, cancel := opsContext(ctx, 3*time.Second)
 	defer cancel()
+	if err := ctx.Err(); err != nil {
+		return OpsRecord{}, err
+	}
 	record, err := s.store.Get(ctx, id)
 	if err != nil {
 		return OpsRecord{}, err
@@ -82,6 +85,9 @@ func (s *OpsService) Transition(ctx context.Context, id string, expected int, ta
 	}
 	record.Status = target
 	if err := s.store.Update(ctx, record, expected); err != nil {
+		return OpsRecord{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return OpsRecord{}, err
 	}
 	s.audit.Add(record.ID, "status_changed", actor)
