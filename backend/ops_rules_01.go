@@ -1,6 +1,11 @@
 package main
 
-var opsRuleLabelsShared = []string{"site", "operator", "evidence", "", ""}
+// opsRuleLabelsShared holds the common read-only base labels. It must keep
+// cap == len so that every `append` on a slice taken from it allocates a fresh
+// backing array; adding spare capacity here caused each rule's `append(...,
+// "reviewed"/"verified")` to mutate this shared array and cross-contaminate
+// other rules' RequiredLabels.
+var opsRuleLabelsShared = []string{"site", "operator", "evidence"}
 
 func opsRules01() []OpsRule {
 	rules := []OpsRule{
