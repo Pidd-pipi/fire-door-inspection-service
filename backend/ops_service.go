@@ -38,12 +38,12 @@ func (p OpsPolicy) Check(record OpsRecord) error {
 func (s *OpsService) Create(ctx context.Context, record OpsRecord) (OpsRecord, error) {
 	record = normalizeOpsRecord(record)
 	if err := s.policy.Check(record); err != nil {
-		return OpsRecord{}, fmt.Errorf("policy rejected: %v", err)
+		return OpsRecord{}, wrapOps("create", "policy", err)
 	}
 	record.CreatedAt = s.clock.Stamp()
 	record.UpdatedAt = record.CreatedAt
 	if err := s.store.Put(ctx, record); err != nil {
-		return OpsRecord{}, fmt.Errorf("create store.put failed: %v", err)
+		return OpsRecord{}, wrapOps("create", "store.put", err)
 	}
 	s.audit.Add(record.ID, "created", record.Owner)
 	return record, nil
@@ -51,7 +51,7 @@ func (s *OpsService) Create(ctx context.Context, record OpsRecord) (OpsRecord, e
 func (s *OpsService) Get(ctx context.Context, id string) (OpsRecord, error) {
 	item, err := s.store.Get(ctx, id)
 	if err != nil {
-		return OpsRecord{}, fmt.Errorf("get %s failed: %v", id, err)
+		return OpsRecord{}, wrapOps("get", id, err)
 	}
 	return item, nil
 }
@@ -76,17 +76,17 @@ func (s *OpsService) Transition(ctx context.Context, id string, expected int, ta
 	defer cancel()
 	record, err := s.store.Get(ctx, id)
 	if err != nil {
-		return OpsRecord{}, err
+		return OpsRecord{}, wrapOps("transition", id, err)
 	}
 	if expected > 0 && expected != record.Revision {
-		return OpsRecord{}, fmt.Errorf("revision mismatch: %v", ErrOpsConflict)
+		return OpsRecord{}, fmt.Errorf("%w: expected revision %d, got %d", ErrOpsConflict, expected, record.Revision)
 	}
 	if err := s.state.Move(record.Status, target, "operator update"); err != nil {
-		return OpsRecord{}, fmt.Errorf("state move failed: %v", err)
+		return OpsRecord{}, wrapOps("transition", id, err)
 	}
 	record.Status = target
 	if err := s.store.Update(ctx, record, expected); err != nil {
-		return OpsRecord{}, err
+		return OpsRecord{}, wrapOps("transition", id, err)
 	}
 	s.audit.Add(record.ID, "status_changed", actor)
 	return record, nil
